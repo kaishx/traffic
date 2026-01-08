@@ -1,8 +1,6 @@
 Plan for the first week -
 
-we create a car class and give it perfect xy and velocity information first.
-then we simulate 1 car on the map and see if we can give it commands (go from node A to node B) in real time
-we create a 2nd car and implement traffic rules and see if they can interact with each other.
+
 
 
 

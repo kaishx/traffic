@@ -1,0 +1,11 @@
+how we use this file: just put date and sequentially update and push this txt file
+
+8/1/2026 | kai le
+A* algorithm for car pathfinding
+map nodes and drawing via pygame
+car logic, with perfect turning now and driving on LHS of road
+main accepts multiple nodes as a path, and the car should ideally path find through the whole set of nodes.
+restricted cars to NO 180 degree turns (i.e no turning on the spot)
+change letter based nodes to number based nodes for future expansions so we aren't constricted by a 26 letter node
+!!! TODO in next few days: implement a 2nd car + traffic rules, see if we can tell the car where to go in real time also !!!
+
