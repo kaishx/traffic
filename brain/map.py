@@ -1,0 +1,1 @@
+# this is simply for the map. we start with a simple grid map of 4 squares to make it simple. 4 tjunctions + 1 4way should be simple enough.
