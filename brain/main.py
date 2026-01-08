@@ -80,7 +80,7 @@ def main():
     graph = simulation_map.graph
 
     # Define the sequence of stops for the car using the new number system
-    stops = [1, 9, 3, 4]
+    stops = [1, 9, 3, 4, 5, 1, 7, 2]
     node_path = create_multi_stop_path(stops, graph)
 
     # Initialize the car with the precise state-machine logic
