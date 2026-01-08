@@ -7,5 +7,6 @@ car logic, with perfect turning now and driving on LHS of road
 main accepts multiple nodes as a path, and the car should ideally path find through the whole set of nodes.
 restricted cars to NO 180 degree turns (i.e no turning on the spot)
 change letter based nodes to number based nodes for future expansions so we aren't constricted by a 26 letter node
+and reviewed AI stuff... shouldnt be any bugs its okay to have bugs early on
 !!! TODO in next few days: implement a 2nd car + traffic rules, see if we can tell the car where to go in real time also !!!
 
