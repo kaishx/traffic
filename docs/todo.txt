@@ -1,6 +1,9 @@
 Plan for the first week -
-
-
+complete Add nodes, add graphs
+complete Add first car
+complete Implement movement
+complete Add second car
+Add traffic logic
 
 
 

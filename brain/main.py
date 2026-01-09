@@ -1,5 +1,6 @@
 import pygame
 import math
+import random
 from map import Map
 from car_logic import Car, a_star_search
 
@@ -11,7 +12,9 @@ FPS = 60
 # --- Colors ---
 GREEN = (50, 200, 50)
 RED = (255, 0, 0)
+BLUE = (0, 0, 255)
 WHITE = (255, 255, 255)
+COLORS = [RED, BLUE, (255, 165, 0), (255, 192, 203), (128, 0, 128), (0, 255, 255)]
 
 def create_multi_stop_path(stops, graph):
     """Creates a single path from a list of sequential stops, preventing 180-degree turns."""
@@ -48,7 +51,7 @@ def create_multi_stop_path(stops, graph):
         
     return full_path
 
-def draw_car(screen, car):
+def draw_car(screen, car, color):
     """Draws the car as a triangle pointing in its direction of travel."""
     car_length = 20
     car_width = 10
@@ -66,7 +69,58 @@ def draw_car(screen, car):
         car.y - car_length / 2 * math.sin(car.angle) + car_width / 2 * math.cos(car.angle)
     )
     
-    pygame.draw.polygon(screen, RED, [p1, p2, p3])
+    pygame.draw.polygon(screen, color, [p1, p2, p3])
+
+def initialise_cars(n, simulation_map, stops_list=None):
+    """
+    Initializes N cars with optional stop lists.
+    
+    Args:
+        n: Number of cars to create
+        simulation_map: Map object containing the graph and nodes
+        stops_list: Optional list of stop lists for each car. 
+                   If None, random stops are generated for each car.
+    
+    Returns:
+        List of initialized Car objects
+    """
+    graph = simulation_map.graph
+    cars = []
+    
+    # Generate stops if not provided
+    if stops_list is None:
+        stops_list = []
+        all_nodes = list(simulation_map.nodes.keys())
+        
+        for i in range(n):
+            # Generate random stops for this car (3-6 stops)
+            num_stops = random.randint(3, 6)
+            stops = random.sample(all_nodes, num_stops)
+            stops_list.append(stops)
+    
+    # Create cars
+    for i in range(n):
+        stops = stops_list[i] if i < len(stops_list) else None
+        
+        # If stops is None, generate random stops
+        if stops is None:
+            all_nodes = list(simulation_map.nodes.keys())
+            num_stops = random.randint(3, 6)
+            stops = random.sample(all_nodes, num_stops)
+        
+        node_path = create_multi_stop_path(stops, graph)
+        
+        # Alternate speed between 80-120 units/sec
+        speed = 80 + (i % 3) * 20
+        color = COLORS[i % len(COLORS)]
+        
+        car = Car(speed=speed, map_data=simulation_map, name=f"Car{i+1}")
+        car.set_path(node_path)
+        car.color = color  # Store color for drawing
+        
+        cars.append(car)
+    
+    return cars
 
 def main():
     """ Main program function. """
@@ -77,15 +131,16 @@ def main():
     clock = pygame.time.Clock()
 
     simulation_map = Map()
-    graph = simulation_map.graph
 
-    # Define the sequence of stops for the car using the new number system
-    stops = [1, 9, 3, 4, 5, 1, 7, 2]
-    node_path = create_multi_stop_path(stops, graph)
+    # Define stops for the first 2 cars, third car will be auto-generated
+    stops_list = [
+        [1, 9, 3, 4, 5, 1, 7, 2],
+        [2, 4, 8, 6, 3, 7, 9, 5],
+        None  # Auto-generate for car 3
+    ]
 
-    # Initialize the car with the precise state-machine logic
-    car = Car(speed=100, map_data=simulation_map)
-    car.set_path(node_path)
+    # Initialize 3 cars
+    cars = initialise_cars(3, simulation_map, stops_list=stops_list)
 
     running = True
     while running:
@@ -94,12 +149,17 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
-        # Pass delta time to the update function
-        car.update(dt)
+        # Update all cars
+        for car in cars:
+            car.update(dt)
 
         screen.fill(GREEN)
         simulation_map.draw(screen)
-        draw_car(screen, car)
+        
+        # Draw all cars
+        for car in cars:
+            draw_car(screen, car, car.color)
+        
         pygame.display.flip()
 
     pygame.quit()
