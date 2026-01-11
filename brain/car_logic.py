@@ -72,6 +72,7 @@ def reconstruct_path(came_from: dict, start: str, end: str) -> List[str]:
 class CarState(Enum):
     DRIVING_STRAIGHT = auto()
     TURNING = auto()
+    WAITING = auto()
 
 
 class Car:
@@ -90,6 +91,7 @@ class Car:
 
         self.state = CarState.DRIVING_STRAIGHT
         self.target_pos = None
+        self._prev_state = None
 
         # Turn-specific attributes
         self.turn_center = None
@@ -174,9 +176,21 @@ class Car:
 
         self.state = CarState.TURNING
 
+    def wait(self):
+        """Put the car into WAITING state (it will stop moving until resumed)."""
+        if self.state != CarState.WAITING:
+            self._prev_state = self.state
+            self.state = CarState.WAITING
+
+    def resume(self):
+        """Resume the previous state after waiting."""
+        if self.state == CarState.WAITING:
+            self.state = self._prev_state or CarState.DRIVING_STRAIGHT
+            self._prev_state = None
+
     def update(self, dt: float):
         """The final state machine with precision fixes."""
-        if self.speed == 0:
+        if self.speed == 0 or self.state == CarState.WAITING:
             return
 
         move_dist = self.speed * dt

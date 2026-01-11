@@ -47,11 +47,12 @@ class Map:
     """
     def __init__(self):
         self.LANE_WIDTH = LANE_WIDTH  # Expose for car logic
-        # Nodes scaled outward (~20%) from the map center to increase road lengths
+        # Nodes scaled inward (~70% of the original distance from map center)
+        # to make roads shorter while maintaining road width
         self.nodes = {
-            1: (100,  90),  2: (400,  90),  3: (700,  90),
-            4: (100, 300),  5: (400, 300),  6: (700, 300),
-            7: (100, 510),  8: (400, 510),  9: (700, 510),
+            1: (190, 153),  2: (400, 153),  3: (610, 153),
+            4: (190, 300),  5: (400, 300),  6: (610, 300),
+            7: (190, 447),  8: (400, 447),  9: (610, 447),
         }
         self.roads = [
             (1, 2), (2, 3), (1, 4), (2, 5), (3, 6),
@@ -214,3 +215,7 @@ class Map:
     def get_gate(self, node, neighbor):
         """Return the gate state ('UP' or 'DOWN')."""
         return self.gates.get((node, neighbor), 'UP')
+
+    # NOTE: Traffic-level waiting/obstacle logic has been moved to
+    # `traffic_logic.update_car_waiting_states(sim_map, cars)` to keep the Map
+    # class focused on map data and drawing.

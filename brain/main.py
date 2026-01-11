@@ -2,7 +2,8 @@ import pygame
 import math
 import random
 from map import Map
-from car_logic import Car, a_star_search
+from car_logic import Car, a_star_search, CarState
+import traffic_logic
 
 # --- Constants ---
 SCREEN_WIDTH = 800
@@ -52,7 +53,11 @@ def create_multi_stop_path(stops, graph):
     return full_path
 
 def draw_car(screen, car, color):
-    """Draws the car as a triangle pointing in its direction of travel."""
+    """Draws the car as a triangle pointing in its direction of travel.
+
+    If the car is in `WAITING` state, a small red circle with pause bars is
+    drawn above the car to indicate it is stopped waiting for an obstacle.
+    """
     car_length = 20
     car_width = 10
     
@@ -70,6 +75,67 @@ def draw_car(screen, car, color):
     )
     
     pygame.draw.polygon(screen, color, [p1, p2, p3])
+
+    # Visual indicator for WAITING state: small red circle with pause bars above the car
+    try:
+        if hasattr(car, 'state') and car.state == CarState.WAITING:
+            cx = int(car.x)
+            cy = int(car.y - 18)  # place above the car
+            radius = 8
+            # Outer circle (red)
+            pygame.draw.circle(screen, RED, (cx, cy), radius)
+            # Pause bars (two small white rectangles)
+            bar_w = 2
+            bar_h = 8
+            gap = 3
+            left_rect = (cx - gap - bar_w, cy - bar_h // 2, bar_w, bar_h)
+            right_rect = (cx + gap, cy - bar_h // 2, bar_w, bar_h)
+            pygame.draw.rect(screen, WHITE, left_rect)
+            pygame.draw.rect(screen, WHITE, right_rect)
+            # Thin black outline for visibility
+            pygame.draw.circle(screen, (0,0,0), (cx, cy), radius, 1)
+    except Exception:
+        # Be defensive: drawing should never crash the main loop
+        pass
+
+    # Draw detection cone in front of moving cars for visualization
+    try:
+        if getattr(car, 'speed', 0) > 0:
+            draw_detection_cone(screen, car, (255, 0, 0))
+    except Exception:
+        pass
+
+
+def draw_detection_cone(screen, car, color=(255,0,0)):
+    """Draw a translucent, blinking trapezium in front of the car to visualize detection."""
+    try:
+        import traffic_logic as tl
+        # Build trapezium points: near base (center at car + heading*NEAR_BASE_DIST)
+        heading = pygame.math.Vector2(math.cos(car.angle), math.sin(car.angle))
+        perp = heading.rotate(-90)
+
+        near_c = pygame.math.Vector2(car.x, car.y) + heading * tl.NEAR_BASE_DIST
+        far_c = near_c + heading * tl.DETECTION_HEIGHT
+
+        near_half = tl.NEAR_BASE_WIDTH / 2.0
+        far_half = tl.FAR_BASE_WIDTH / 2.0
+
+        near_left = near_c + perp * near_half
+        near_right = near_c - perp * near_half
+        far_left = far_c + perp * far_half
+        far_right = far_c - perp * far_half
+
+        # Blinking alpha via sinusoidal function (1 Hz pulse)
+        t = pygame.time.get_ticks() / 1000.0
+        base_alpha = 80
+        alpha = int((0.5 + 0.5 * math.sin(2 * math.pi * 1.0 * t)) * base_alpha)
+        alpha = max(15, alpha)
+
+        surf = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        pygame.draw.polygon(surf, (color[0], color[1], color[2], alpha), [near_left, far_left, far_right, near_right])
+        screen.blit(surf, (0, 0))
+    except Exception:
+        pass
 
 def initialise_cars(n, simulation_map, stops_list=None):
     """
@@ -105,7 +171,7 @@ def initialise_cars(n, simulation_map, stops_list=None):
         # If stops is None, generate random stops
         if stops is None:
             all_nodes = list(simulation_map.nodes.keys())
-            num_stops = random.randint(3, 6)
+            num_stops = random.randint(6, 9)
             stops = random.sample(all_nodes, num_stops)
         
         node_path = create_multi_stop_path(stops, graph)
@@ -121,6 +187,16 @@ def initialise_cars(n, simulation_map, stops_list=None):
         cars.append(car)
     
     return cars
+
+
+def get_car_positions(cars):
+    """Return current positions for cars as {name: (x, y, angle)}.
+
+    If `cars` is None or empty, returns an empty dict.
+    """
+    if not cars:
+        return {}
+    return {c.name: (c.x, c.y, c.angle) for c in cars}
 
 def main():
     """ Main program function. """
@@ -139,8 +215,8 @@ def main():
         None  # Auto-generate for car 3
     ]
 
-    # Initialize 3 cars
-    cars = initialise_cars(3, simulation_map, stops_list=stops_list)
+    # Initialize 6 cars
+    cars = initialise_cars(6, simulation_map, stops_list=stops_list)
 
     running = True
     while running:
@@ -148,6 +224,9 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+
+        # Update obstacle/waiting states based on traffic logic (stop cars when blocked)
+        traffic_logic.update_car_waiting_states(simulation_map, cars)
 
         # Update all cars
         for car in cars:
