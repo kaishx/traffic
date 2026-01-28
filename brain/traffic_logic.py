@@ -1,99 +1,158 @@
 import pygame
-import math
+import time
+from collections import namedtuple
+from math import sqrt, cos, sin, pi
 
-# Detection parameters (trapezium) - scaled down by 50%
-CAR_LENGTH = 20.0  # visual car length used for spacing decisions
-NEAR_BASE_DIST = 0.25 * CAR_LENGTH  # half of previous near-base distance
-DETECTION_HEIGHT = 2.0 * CAR_LENGTH  # half of previous trapezium height
-NEAR_BASE_WIDTH = 0.5 * CAR_LENGTH
-FAR_BASE_WIDTH = 1.5 * CAR_LENGTH
+# A simple object representing a stop point for a red light.
+StopObstacle = namedtuple('StopObstacle', ['x', 'y', 'path_key'])
+
+# --- TIMING CONFIGURATION ---
+TRAFFIC_LIGHT_GO_TIME = 5.0  # Green light duration
+TRAFFIC_LIGHT_COOLDOWN_TIME = 1  # All-Red duration between switches
+
+CAR_FOLLOW_DISTANCE = 35
+CAR_BOUNDING_BOX_SIZE = 20
+CAR_LENGTH = 10
 
 
-def _in_detection_trapezium(heading: 'pygame.math.Vector2', rel: 'pygame.math.Vector2') -> bool:
-    """Return True if the relative vector `rel` (from car to object) lies inside
-    the forward trapezium defined by NEAR_BASE_DIST, DETECTION_HEIGHT,
-    NEAR_BASE_WIDTH and FAR_BASE_WIDTH.
+class TrafficLightManager:
+    def __init__(self, sim_map):
+        self.sim_map = sim_map
+        self.junctions = [node for node, nbrs in sim_map.graph.adjacency_list.items() if len(nbrs) >= 3]
+
+        self.light_states = {}
+        self.last_switch_time = {}
+        self.current_green_index = {}
+
+        # Track which phase the junction is in: 'GO' or 'COOLDOWN'
+        self.junction_phases = {}
+
+        for node in self.junctions:
+            self.last_switch_time[node] = time.time()
+            self.junction_phases[node] = 'GO'  # Start in GO mode
+
+            neighbors = self.sim_map.graph.get_neighbors(node)
+            self.light_states[node] = {nbr: 'RED' for nbr in neighbors}
+
+            if neighbors:
+                self.light_states[node][neighbors[0]] = 'GREEN'
+                self.current_green_index[node] = 0
+
+    def update(self):
+        current_time = time.time()
+
+        for node in self.junctions:
+            neighbors = self.sim_map.graph.get_neighbors(node)
+            if not neighbors: continue
+
+            elapsed = current_time - self.last_switch_time.get(node, 0)
+            phase = self.junction_phases[node]
+
+            # --- PHASE 1: GREEN LIGHT (GO) ---
+            if phase == 'GO':
+                if elapsed > TRAFFIC_LIGHT_GO_TIME:
+                    # Switch to COOLDOWN (All Red)
+                    self.junction_phases[node] = 'COOLDOWN'
+                    self.last_switch_time[node] = current_time
+
+                    # Turn the current Green to Red
+                    current_idx = self.current_green_index[node]
+                    current_nbr = neighbors[current_idx]
+                    self.light_states[node][current_nbr] = 'RED'
+
+            # --- PHASE 2: CLEARANCE (COOLDOWN) ---
+            elif phase == 'COOLDOWN':
+                if elapsed > TRAFFIC_LIGHT_COOLDOWN_TIME:
+                    # Switch to next GO (Next Green)
+                    self.junction_phases[node] = 'GO'
+                    self.last_switch_time[node] = current_time
+
+                    # Advance to next neighbor
+                    next_idx = (self.current_green_index[node] + 1) % len(neighbors)
+                    self.current_green_index[node] = next_idx
+
+                    # Turn the new neighbor to Green
+                    next_nbr = neighbors[next_idx]
+                    self.light_states[node][next_nbr] = 'GREEN'
+
+    def get_time_remaining(self, node):
+        """Returns time remaining for the CURRENT phase (either Go or Cooldown)."""
+        elapsed = time.time() - self.last_switch_time.get(node, 0)
+        phase = self.junction_phases.get(node, 'GO')
+
+        if phase == 'GO':
+            return max(0, TRAFFIC_LIGHT_GO_TIME - elapsed)
+        else:
+            # During cooldown, maybe show 0 or the cooldown time?
+            # Let's show the cooldown time so you know when Green is coming.
+            return max(0, TRAFFIC_LIGHT_COOLDOWN_TIME - elapsed)
+
+
+def update_car_states(cars, traffic_light_manager, path_manager):
     """
-    forward = rel.dot(heading)
-    if forward < NEAR_BASE_DIST or forward > (NEAR_BASE_DIST + DETECTION_HEIGHT):
-        return False
-    # lateral distance perpendicular to heading
-    lateral_vec = rel - heading * forward
-    lateral = lateral_vec.length()
-    # Interpolate half-width between near and far bases
-    near_half = NEAR_BASE_WIDTH / 2.0
-    far_half = FAR_BASE_WIDTH / 2.0
-    t = (forward - NEAR_BASE_DIST) / DETECTION_HEIGHT
-    half_width = near_half + (far_half - near_half) * t
-    return lateral <= half_width
-
-
-def update_car_waiting_states(sim_map, cars, lookahead_factor: float = 0.4, min_lookahead: float = 20.0):
-    """Check for obstacles in front of cars and set them to WAITING or resume them.
-
-    Only consider obstacles that are within the trapezium in front of the car
-    as defined by the constants above.
+    Updates car states with improved 'Distance-Based' queuing to prevent overlapping.
     """
-    if not cars:
-        return
+    traffic_light_manager.update()
 
+    # 1. Update Red Light Obstacles
+    stop_obstacles = []
+    for j_node in traffic_light_manager.junctions:
+        for in_node, state in traffic_light_manager.light_states[j_node].items():
+            if state == 'RED':
+                path_key = (in_node, j_node)
+                path = path_manager.get_path_for_nodes(path_key)
+                if path:
+                    stop_obstacles.append(StopObstacle(path[-1].x, path[-1].y, path_key))
+
+    # 2. Reset Wait States
     for car in cars:
-        # Ignore cars with no meaningful path or that have finished their path
-        if not getattr(car, 'node_path', None) or getattr(car, 'path_index', 0) >= max(0, len(car.node_path) - 1):
-            # If the car was waiting but has no path, resume to avoid permanent blockage
-            if getattr(car, 'state', None) and getattr(car.state, 'name', '') == 'WAITING':
-                try:
-                    car.resume()
-                except Exception:
-                    pass
-            continue
+        car.resume()
 
-        # Ignore stopped cars and cars currently turning
-        if getattr(car, 'speed', 0) == 0:
-            continue
-        if getattr(car, 'state', None) is not None and getattr(car.state, 'name', '') == 'TURNING':
-            continue
+    # 3. Check Conditions
+    for i, car in enumerate(cars):
+        car_path_key = car.current_node_sequence
+        if not car_path_key: continue
 
-        heading = pygame.math.Vector2(math.cos(car.angle), math.sin(car.angle))
-        pos = pygame.math.Vector2(car.x, car.y)
+        # --- A. Red Light Check ---
+        for stop in stop_obstacles:
+            if stop.path_key == car_path_key:
+                if car.detailed_path:
+                    stop_line_pos = car.detailed_path[-1]
+                    dist_to_stop = pygame.math.Vector2(car.x, car.y).distance_to(stop_line_pos)
 
-        blocked = False
+                    if dist_to_stop < CAR_FOLLOW_DISTANCE:
+                        car.wait()
+                        break
 
-        # Check other cars in the detection trapezium in front of the car
-        for other in cars:
-            if other is car:
-                continue
-            rel = pygame.math.Vector2(other.x, other.y) - pos
-            if _in_detection_trapezium(heading, rel):
-                blocked = True
+        if car.is_waiting: continue
+
+        # --- B. Car-Following Logic (Prevents Overlap) ---
+        my_pos = pygame.math.Vector2(car.x, car.y)
+
+        for j, other_car in enumerate(cars):
+            if i == j: continue
+
+            other_pos = pygame.math.Vector2(other_car.x, other_car.y)
+            distance = my_pos.distance_to(other_pos)
+
+            # 1. CRITICAL FIX: Ghost Bug
+            if distance < 5:
+                car.wait()
                 break
 
-        # If not blocked by cars, check gates in front (also use trapezium)
-        if not blocked:
-            for (node, nbr), state in sim_map.gates.items():
-                if state != 'UP':
-                    continue
-                node_pos = pygame.math.Vector2(sim_map.nodes[node])
-                nbr_pos = pygame.math.Vector2(sim_map.nodes[nbr])
-                dir_vec = nbr_pos - node_pos
-                if dir_vec.length() == 0:
-                    continue
-                unit = dir_vec.normalize()
-                # gate position slightly outside the intersection (matches draw logic)
-                gate_pos = node_pos + unit * (sim_map.LANE_WIDTH + 4)
-                rel2 = gate_pos - pos
-                if _in_detection_trapezium(heading, rel2):
-                    blocked = True
+            # 2. Standard Following Check
+            if distance < CAR_FOLLOW_DISTANCE:
+
+                # Determine if the other car is "Ahead"
+                to_other = other_pos - my_pos
+                if to_other.length() == 0: continue
+
+                # Normalize manually
+                to_other = to_other.normalize()
+
+                # Dot product check
+                forward_dot = cos(car.angle) * to_other.x + sin(car.angle) * to_other.y
+
+                if forward_dot > 0.7:
+                    car.wait()
                     break
-
-        # Apply state changes: call wait() if blocked, otherwise resume any waiting car
-        try:
-            if blocked:
-                car.wait()
-            else:
-                if getattr(car, 'state', None) is not None and getattr(car.state, 'name', '') == 'WAITING':
-                    car.resume()
-        except Exception:
-            # Be defensive in case objects passed in aren't full car objects
-            pass
-

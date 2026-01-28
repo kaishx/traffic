@@ -10,3 +10,11 @@ change letter based nodes to number based nodes for future expansions so we aren
 and reviewed AI stuff... shouldnt be any bugs its okay to have bugs early on
 !!! TODO in next few days: implement a 2nd car + traffic rules, see if we can tell the car where to go in real time also !!!
 
+28/1/2025 | KL
+- added guide rails (will turn them invisible later on but im keeping them on for debugging). These guide rails make the car's turning MUCH MUCH cleaner than before
+- The guide rails exist under path_manager.py and this can be expanded for other maps.
+- Added traffic lights with visual cues so user can see which roads can go and which must stop. Cars respect these rules
+- Tweaked the collision detection system a little using bounding boxes. (made the boxes visible) and made it smarter
+- Some tweaks to the map itself, made the roads longer.
+- Added three modes that can be toggled with 1/2/3.  Debug MODE: See all rails and bounding boxes + All below, Info Mode: See the destination node of car + Time until traffic light turns green, Clean Mode: See nothing
+- Added a global cooldown time for traffic lights so that existing turning traffic can clear before a new green light is lit.
