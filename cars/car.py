@@ -11,7 +11,7 @@ class Car:
 	Attributes:
 		x (float): X position.
 		y (float): Y position.
-		speed (float): Speed in units per second (>=0).
+		speed (float): Sp   eed in units per second (>=0).
 		angle (float): Heading angle in radians, 0 = +X, positive = counter-clockwise.
 		name (str): Optional identifier.
 

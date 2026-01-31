@@ -1,11 +1,6 @@
 import pygame
 from math import dist
 
-# --- Constants ---
-ROAD_WIDTH = 80
-LANE_WIDTH = ROAD_WIDTH // 2
-DASH_LENGTH = 20
-
 # --- Colors ---
 GRAY = (100, 100, 100)
 YELLOW = (255, 255, 0)
@@ -13,7 +8,7 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
-RAIL_COLOR = (255, 0, 255)  # Magenta for rails
+RAIL_COLOR = (255, 0, 255)
 
 
 class Graph:
@@ -26,7 +21,7 @@ class Graph:
             self.adjacency_list[road[1]].append(road[0])
 
     def get_neighbors(self, node, previous_node=None):
-        neighbors = self.adjacency_list[node]
+        neighbors = self.adjacency_list.get(node, [])
         if previous_node is None:
             return neighbors
         return [n for n in neighbors if n != previous_node]
@@ -36,54 +31,80 @@ class Graph:
 
 
 class Map:
-    def __init__(self):
-        self.LANE_WIDTH = LANE_WIDTH
-        self.nodes = {
-            1: (150, 120), 2: (400, 120), 3: (650, 120),
-            4: (150, 300), 5: (400, 300), 6: (650, 300),
-            7: (150, 480), 8: (400, 480), 9: (650, 480),
-        }
-        self.roads = [
-            (1, 2), (2, 3), (1, 4), (2, 5), (3, 6),
-            (4, 5), (5, 6), (4, 7), (5, 8), (6, 9),
-            (7, 8), (8, 9),
-        ]
+    def __init__(self, screen_width, screen_height, grid_cols, grid_rows, active_nodes):
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.cols = grid_cols
+        self.rows = grid_rows
+        self.active_nodes_set = set(active_nodes)
+
+        self.cell_w = self.screen_width / self.cols
+        self.cell_h = self.screen_height / self.rows
+
+        min_dim = min(self.cell_w, self.cell_h)
+        self.ROAD_WIDTH = int(min_dim * 0.35)
+        self.ROAD_WIDTH = max(20, self.ROAD_WIDTH)
+        self.LANE_WIDTH = self.ROAD_WIDTH // 2
+
+        self.render_scale = min_dim / 150.0
+
+        self.nodes = {}
+        self.roads = []
+        self._generate_grid()
         self.graph = Graph(self.nodes, self.roads)
-        self.font = pygame.font.SysFont("Arial", 20, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 16)
+
+        font_size = max(10, int(20 * self.render_scale))
+        self.font = pygame.font.SysFont("Arial", font_size, bold=True)
+        self.small_font = pygame.font.SysFont("Arial", max(8, int(16 * self.render_scale)))
+
+    def _generate_grid(self):
+        for node_id in self.active_nodes_set:
+            idx = node_id - 1
+            row = idx // self.cols
+            col = idx % self.cols
+            x = (col * self.cell_w) + (self.cell_w / 2)
+            y = (row * self.cell_h) + (self.cell_h / 2)
+            self.nodes[node_id] = (x, y)
+
+        for node_id in self.active_nodes_set:
+            idx = node_id - 1
+            row = idx // self.cols
+            col = idx % self.cols
+
+            if col < self.cols - 1:
+                right_neighbor = node_id + 1
+                if right_neighbor in self.active_nodes_set:
+                    self.roads.append((node_id, right_neighbor))
+
+            if row < self.rows - 1:
+                down_neighbor = node_id + self.cols
+                if down_neighbor in self.active_nodes_set:
+                    self.roads.append((node_id, down_neighbor))
 
     def draw(self, screen, traffic_light_manager, path_manager, view_mode):
-        """Draws map elements based on view_mode."""
-
-        # 1. Base Roads (Always visible)
         for start_node, end_node in self.roads:
             self._draw_road_segment(screen, self.nodes[start_node], self.nodes[end_node])
+
         for node_pos in self.nodes.values():
             pygame.draw.rect(screen, GRAY,
-                             (node_pos[0] - self.LANE_WIDTH, node_pos[1] - self.LANE_WIDTH, ROAD_WIDTH, ROAD_WIDTH))
+                             (node_pos[0] - self.LANE_WIDTH, node_pos[1] - self.LANE_WIDTH,
+                              self.ROAD_WIDTH, self.ROAD_WIDTH))
 
-        # 2. Rails (DEBUG Only)
-        # Import ViewMode locally to check, or just assume integer 1
-        if view_mode == 1:  # DEBUG
+        if view_mode == 1:
             if path_manager:
                 for path in path_manager.paths.values():
                     if len(path) > 1:
                         pygame.draw.lines(screen, RAIL_COLOR, False, path, 1)
 
-        # 3. Traffic Lights & Timers
         if traffic_light_manager:
             for junction_node in traffic_light_manager.junctions:
-
-                # Draw Time Remaining (DEBUG & INFO)
                 if view_mode in [1, 2]:
                     time_left = traffic_light_manager.get_time_remaining(junction_node)
                     time_text = f"{time_left:.1f}s"
                     text_surf = self.small_font.render(time_text, True, BLACK)
-                    # Draw near the junction center
                     j_pos = self.nodes[junction_node]
                     screen.blit(text_surf, (j_pos[0] - 15, j_pos[1] - 10))
 
-                # Draw Light Gates (All Modes)
                 for inflow_node, state in traffic_light_manager.light_states[junction_node].items():
                     junction_pos = pygame.math.Vector2(self.nodes[junction_node])
                     inflow_pos = pygame.math.Vector2(self.nodes[inflow_node])
@@ -97,10 +118,17 @@ class Map:
                     start_pos = stop_line_base - perp_vec * self.LANE_WIDTH
                     end_pos = stop_line_base
 
-                    color = RED if state == 'RED' else GREEN
-                    pygame.draw.line(screen, color, start_pos, end_pos, 5)
+                    # Determine Color
+                    if state == 'RED':
+                        color = RED
+                    elif state == 'YELLOW':
+                        color = YELLOW
+                    else:
+                        color = GREEN
 
-        # 4. Node Numbers (DEBUG Only)
+                    line_width = max(2, int(5 * self.render_scale))
+                    pygame.draw.line(screen, color, start_pos, end_pos, line_width)
+
         if view_mode == 1:
             for node_id, pos in self.nodes.items():
                 img = self.font.render(str(node_id), True, BLACK)
@@ -108,59 +136,44 @@ class Map:
                 screen.blit(img, rect)
 
     def _draw_road_segment(self, screen, start_pos, end_pos):
-        # Unchanged
-        pygame.draw.line(screen, GRAY, start_pos, end_pos, ROAD_WIDTH)
+        pygame.draw.line(screen, GRAY, start_pos, end_pos, self.ROAD_WIDTH)
+
         line_vector = pygame.math.Vector2(end_pos) - pygame.math.Vector2(start_pos)
         line_length = line_vector.length()
         if line_length == 0: return
         unit_vector = line_vector.normalize()
-        DASH_MARGIN = self.LANE_WIDTH
-        dash_start = DASH_MARGIN
-        dash_end = line_length - DASH_MARGIN
-        if dash_end > dash_start:
-            distance = dash_start
-            draw_dash = True
-            while distance < dash_end:
-                dash_segment_end = min(distance + DASH_LENGTH, dash_end)
-                if draw_dash:
-                    start_dash = pygame.math.Vector2(start_pos) + unit_vector * distance
-                    end_dash = pygame.math.Vector2(start_pos) + unit_vector * dash_segment_end
-                    pygame.draw.line(screen, YELLOW, start_dash, end_dash, 2)
-                distance += DASH_LENGTH
-                draw_dash = not draw_dash
-        ARROW_SPACING = 60
-        ARROW_LENGTH = 12
-        ARROW_WIDTH = 8
-        ARROW_TAIL_LENGTH = 10
-        ARROW_TAIL_WIDTH = 2
-        ARROW_COLOR = BLACK
-        END_MARGIN = 80
+
+        dash_len = 20 * self.render_scale
+
+        dist = self.LANE_WIDTH
+        while dist < line_length - self.LANE_WIDTH:
+            start_dash = pygame.math.Vector2(start_pos) + unit_vector * dist
+            end_dash = start_dash + unit_vector * dash_len
+            if (pygame.math.Vector2(start_pos).distance_to(end_dash) <
+                    pygame.math.Vector2(start_pos).distance_to(
+                        pygame.math.Vector2(end_pos) - unit_vector * self.LANE_WIDTH)):
+                pygame.draw.line(screen, YELLOW, start_dash, end_dash, max(1, int(2 * self.render_scale)))
+            dist += dash_len * 2
+
+        arrow_spacing = 60 * self.render_scale
+        arrow_len = 12 * self.render_scale
+        arrow_width = 8 * self.render_scale
+
+        dist = 80 * self.render_scale
         perp = unit_vector.rotate(-90)
         lane_offset = self.LANE_WIDTH / 2
-        left_lane_offset = perp * lane_offset
-        right_lane_offset = -perp * lane_offset
 
-        def _draw_arrow(center, direction, color=ARROW_COLOR):
-            dir_unit = pygame.math.Vector2(direction).normalize()
-            tip = center + dir_unit * (ARROW_LENGTH / 2)
-            base_center = center - dir_unit * (ARROW_LENGTH / 2)
-            perp_dir = dir_unit.rotate(-90)
-            left_base = base_center + perp_dir * (ARROW_WIDTH / 2)
-            right_base = base_center - perp_dir * (ARROW_WIDTH / 2)
-            pygame.draw.polygon(screen, color, [tip, left_base, right_base])
-            tail_back_center = base_center - dir_unit * ARROW_TAIL_LENGTH
-            tail_half = ARROW_TAIL_WIDTH / 2
-            tail_front_left = base_center + perp_dir * tail_half
-            tail_front_right = base_center - perp_dir * tail_half
-            tail_back_left = tail_back_center + perp_dir * tail_half
-            tail_back_right = tail_back_center - perp_dir * tail_half
-            pygame.draw.polygon(screen, color, [tail_front_left, tail_back_left, tail_back_right, tail_front_right])
-
-        dist = END_MARGIN
-        while dist < line_length - END_MARGIN:
+        while dist < line_length - (80 * self.render_scale):
             base_point = pygame.math.Vector2(start_pos) + unit_vector * dist
-            pos_left = base_point + left_lane_offset
-            _draw_arrow(pos_left, unit_vector)
-            pos_right = base_point + right_lane_offset
-            _draw_arrow(pos_right, -unit_vector)
-            dist += ARROW_SPACING
+            self._draw_arrow(screen, base_point + perp * lane_offset, unit_vector, arrow_len, arrow_width)
+            self._draw_arrow(screen, base_point - perp * lane_offset, -unit_vector, arrow_len, arrow_width)
+            dist += arrow_spacing
+
+    def _draw_arrow(self, screen, center, direction, length, width):
+        dir_unit = direction
+        tip = center + dir_unit * (length / 2)
+        base = center - dir_unit * (length / 2)
+        perp = dir_unit.rotate(-90)
+        left = base + perp * (width / 2)
+        right = base - perp * (width / 2)
+        pygame.draw.polygon(screen, BLACK, [tip, left, right])

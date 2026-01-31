@@ -39,26 +39,32 @@ def reconstruct_path(came_from: dict, start: str, end: str) -> List[str]:
     return path
 
 
-# --- Car Logic ---
+# --- Car Logic (INSTANT PHYSICS UPDATE) ---
 class Car:
-    def __init__(self, speed: float, map_data: 'Map', name: str = "Car", color: tuple = (255, 0, 0)):
-        self.x, self.y = 0.0, 0.0
-        self.speed = float(speed)
-        self.initial_speed = float(speed)
-        self.angle = 0.0
+    def __init__(self, map_data: 'Map', name: str, color: tuple,
+                 max_speed: float = 50.0, length: float = 10.0):
+        self.map_data = map_data
         self.name = str(name)
         self.color = color
-        self.map_data = map_data
 
+        # Physics Properties
+        self.x, self.y = 0.0, 0.0
+        self.length = float(length)
+        self.max_speed = float(max_speed)
+
+        # REMOVED ACCELERATION VARIABLES
+
+        # Dynamic State
+        self.speed = self.max_speed
+        self.target_speed = self.max_speed
+        self.angle = 0.0
+        self.is_waiting = False
+
+        # Pathing State
         self.node_path: List[str] = []
         self.node_path_index = 0
-
         self.detailed_path: List[pygame.math.Vector2] = []
         self.detailed_path_index = 0
-
-        self.is_waiting = False
-        self._speed_before_wait = 0
-
         self.current_node_sequence: Optional[Tuple[str, ...]] = None
         self._pending_turn_sequence: Optional[Tuple[str, ...]] = None
 
@@ -68,26 +74,18 @@ class Car:
         self.node_path_index = 0
         self.detailed_path_index = 0
         self._pending_turn_sequence = None
-        self.speed = self.initial_speed
+        self.target_speed = self.max_speed
 
         self._generate_next_detailed_path_segment(path_manager)
 
         if self.detailed_path:
             self.x, self.y = self.detailed_path[0]
-            # FIX: Set initial angle immediately so the car faces the correct direction
-            # instead of defaulting to 0 (Right) until it moves.
             if len(self.detailed_path) > 1:
                 vec = self.detailed_path[1] - self.detailed_path[0]
                 if vec.length() > 0:
                     self.angle = atan2(vec.y, vec.x)
 
     def _generate_next_detailed_path_segment(self, path_manager):
-        """
-        Generates the next segment strictly in order:
-        1. Approach Segment (Node A -> Node B Stop Line)
-        2. Junction Segment (Node A -> Node B -> Node C)
-        """
-
         if self._pending_turn_sequence:
             self.detailed_path = path_manager.get_path_for_nodes(self._pending_turn_sequence)
             self.current_node_sequence = self._pending_turn_sequence
@@ -98,7 +96,7 @@ class Car:
 
         if self.node_path_index >= len(self.node_path) - 1:
             self.detailed_path = []
-            self.speed = 0
+            self.target_speed = 0  # Stop at end of path
             self.current_node_sequence = None
             return
 
@@ -117,8 +115,11 @@ class Car:
             self._pending_turn_sequence = None
 
     def update(self, dt, path_manager):
-        if not self.detailed_path or self.is_waiting:
+        if not self.detailed_path:
             return
+
+        # --- INSTANT PHYSICS: No Inertia ---
+        self.speed = self.target_speed
 
         move_dist = self.speed * dt
 
@@ -145,12 +146,13 @@ class Car:
             self._generate_next_detailed_path_segment(path_manager)
 
     def wait(self):
+        """Commands the car to stop instantly."""
         if not self.is_waiting:
-            self._speed_before_wait = self.speed
-            self.speed = 0
+            self.target_speed = 0
             self.is_waiting = True
 
     def resume(self):
+        """Commands the car to go instantly."""
         if self.is_waiting:
-            self.speed = self._speed_before_wait
+            self.target_speed = self.max_speed
             self.is_waiting = False
