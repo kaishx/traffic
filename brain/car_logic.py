@@ -2,6 +2,7 @@ import pygame
 from math import dist, atan2, cos, sin
 from typing import List, Optional, Tuple
 import heapq
+from enum import Enum
 
 
 # --- A* Pathfinding (Unchanged) ---
@@ -39,10 +40,17 @@ def reconstruct_path(came_from: dict, start: str, end: str) -> List[str]:
     return path
 
 
+class CarState(Enum):
+    ACCELERATE = 1
+    CRUISE = 2
+    BRAKE = 3
+
 # --- Car Logic (INSTANT PHYSICS UPDATE) ---
 class Car:
     def __init__(self, map_data: 'Map', name: str, color: tuple,
-                 max_speed: float = 50.0, length: float = 10.0):
+                 max_speed: float = 69.0, length: float = 10.0,
+                 speed_stop_factor: float = 0.16, engine_power: float = 375,
+                 weight: float = 1500, brake_force: float = 110):
         self.map_data = map_data
         self.name = str(name)
         self.color = color
@@ -51,14 +59,15 @@ class Car:
         self.x, self.y = 0.0, 0.0
         self.length = float(length)
         self.max_speed = float(max_speed)
-
-        # REMOVED ACCELERATION VARIABLES
+        self.speed_stop_factor = float(speed_stop_factor)
+        self.engine_power = float(engine_power)
+        self.weight = float(weight)
+        self.brake_force = float(brake_force)
 
         # Dynamic State
         self.speed = self.max_speed
-        self.target_speed = self.max_speed
+        self.state = CarState.ACCELERATE
         self.angle = 0.0
-        self.is_waiting = False
 
         # Pathing State
         self.node_path: List[str] = []
@@ -74,7 +83,7 @@ class Car:
         self.node_path_index = 0
         self.detailed_path_index = 0
         self._pending_turn_sequence = None
-        self.target_speed = self.max_speed
+        self.state = CarState.ACCELERATE
 
         self._generate_next_detailed_path_segment(path_manager)
 
@@ -96,7 +105,7 @@ class Car:
 
         if self.node_path_index >= len(self.node_path) - 1:
             self.detailed_path = []
-            self.target_speed = 0  # Stop at end of path
+            self.state = CarState.BRAKE  # Stop at end of path
             self.current_node_sequence = None
             return
 
@@ -114,14 +123,37 @@ class Car:
         else:
             self._pending_turn_sequence = None
 
+    def calc_brake_stop_distance(self):
+        return (self.speed ** 2) / (2 * self.brake_force)
+
+    def calc_cruise_distance(self, target_v, surface_friction=1.0):
+        return (self.speed - target_v) / (self.speed_stop_factor * surface_friction)
+
     def update(self, dt, path_manager):
         if not self.detailed_path:
             return
 
-        # --- INSTANT PHYSICS: No Inertia ---
-        self.speed = self.target_speed
+        # --- REALISTIC PHYSICS ---
+        surface_friction = 1.0
+
+        speed_decayed = self.speed * (1 - self.speed_stop_factor * surface_friction * dt)
+
+        engine = 0.0
+        if self.state in [CarState.ACCELERATE]:
+            if self.speed <= self.max_speed:
+                engine = (self.engine_power / self.weight) * dt * self.max_speed * surface_friction
+
+        braking = 0.0
+        if self.state == CarState.BRAKE:
+            braking = self.brake_force * surface_friction * dt
+
+        self.speed = speed_decayed + engine - braking
+
+        if self.speed < 0: self.speed = 0
 
         move_dist = self.speed * dt
+
+        # --- MOVE ALONG DETAILED PATH ---
 
         while move_dist > 0 and self.detailed_path_index < len(self.detailed_path) - 1:
             target_pos = self.detailed_path[self.detailed_path_index + 1]
@@ -144,15 +176,3 @@ class Car:
 
         if self.detailed_path_index >= len(self.detailed_path) - 1:
             self._generate_next_detailed_path_segment(path_manager)
-
-    def wait(self):
-        """Commands the car to stop instantly."""
-        if not self.is_waiting:
-            self.target_speed = 0
-            self.is_waiting = True
-
-    def resume(self):
-        """Commands the car to go instantly."""
-        if self.is_waiting:
-            self.target_speed = self.max_speed
-            self.is_waiting = False

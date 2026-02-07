@@ -98,14 +98,15 @@ class Map:
 
         if traffic_light_manager:
             for junction_node in traffic_light_manager.junctions:
+                jm = traffic_light_manager.junction_managers[junction_node]
                 if view_mode in [1, 2]:
-                    time_left = traffic_light_manager.get_time_remaining(junction_node)
+                    time_left = jm.get_time_remaining()
                     time_text = f"{time_left:.1f}s"
                     text_surf = self.small_font.render(time_text, True, BLACK)
                     j_pos = self.nodes[junction_node]
                     screen.blit(text_surf, (j_pos[0] - 15, j_pos[1] - 10))
 
-                for inflow_node, state in traffic_light_manager.light_states[junction_node].items():
+                for inflow_node, state in jm.light_states.items():
                     junction_pos = pygame.math.Vector2(self.nodes[junction_node])
                     inflow_pos = pygame.math.Vector2(self.nodes[inflow_node])
 

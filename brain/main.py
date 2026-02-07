@@ -5,7 +5,7 @@ from math import cos, sin
 from typing import List
 
 from map import Map
-from car_logic import Car
+from car_logic import Car, CarState
 from path_manager import PathManager
 from traffic_logic import TrafficLightManager, update_car_states, CAR_BOUNDING_BOX_SIZE
 
@@ -28,15 +28,43 @@ ACTIVE_NODES = [
 
 # --- VEHICLE TYPES (NO ACCELERATION) ---
 VEHICLE_TYPES = {
-    'Standard': {'length': 10, 'max_speed': 90},
-    'Sports': {'length': 10, 'max_speed': 100},
-    'Truck': {'length': 22, 'max_speed': 60},
-    'Van': {'length': 15, 'max_speed': 75}
+    'Standard': {
+        'length': 10,
+        'max_speed': 69,
+        'engine_power': 375,
+        'weight': 1500,
+        'speed_stop_factor': 0.16,
+        'brake_force': 110
+    },
+    'Sports': {
+        'length': 10,
+        'max_speed': 100,
+        'engine_power': 630,
+        'weight': 1400,
+        'speed_stop_factor': 0.25,
+        'brake_force': 175
+    },
+    'Truck': {
+        'length': 22,
+        'max_speed': 36,
+        'engine_power': 208,
+        'weight': 2600,
+        'speed_stop_factor': 0.05,
+        'brake_force': 40
+    },
+    'Van': {
+        'length': 15,
+        'max_speed': 55,
+        'engine_power': 315,
+        'weight': 2100,
+        'speed_stop_factor': 0.1,
+        'brake_force': 75
+    }
 }
 
 # --- SPAWN RATES ---
 VEHICLE_WEIGHTS = {
-    'Standard': 200,
+    'Standard': 20,
     'Sports': 10,
     'Truck': 15,
     'Van': 25
@@ -44,7 +72,11 @@ VEHICLE_WEIGHTS = {
 
 # --- Colors ---
 BACKGROUND_COLOR = (200, 200, 200)
-BOUNDING_BOX_COLOR = (0, 255, 0)
+BOUNDING_BOX_COLOR = {
+    CarState.ACCELERATE: (0, 255, 0),
+    CarState.CRUISE: (255, 255, 0),
+    CarState.BRAKE: (255, 0, 0)
+}
 TEXT_COLOR = (0, 0, 0)
 
 
@@ -112,7 +144,12 @@ def draw_car(car: Car, view_mode, render_scale):
             # Translate
             rotated_corners.append((car.x + rx, car.y + ry))
 
-        pygame.draw.lines(screen, BOUNDING_BOX_COLOR, True, rotated_corners, 1)
+        color = BOUNDING_BOX_COLOR.get(car.state, (0, 255, 0))
+        pygame.draw.lines(screen, color, True, rotated_corners, 1)
+
+        # Draw Speed
+        speed_surf = font.render(f"{int(car.speed)}", True, TEXT_COLOR)
+        screen.blit(speed_surf, (car.x - 10, car.y + 10))
 
     if view_mode in [ViewMode.DEBUG, ViewMode.INFO]:
         if car.node_path and car.node_path_index < len(car.node_path) - 1:
@@ -183,7 +220,11 @@ def main():
             color=car_color,
             name=f"{v_type_name} {i}",
             max_speed=v_props['max_speed'],
-            length=v_props['length']
+            length=v_props['length'],
+            engine_power=v_props['engine_power'],
+            weight=v_props['weight'],
+            speed_stop_factor=v_props['speed_stop_factor'],
+            brake_force=v_props['brake_force']
         )
 
         node_path = get_random_node_path(simulation_map, exclude_starts=occupied_start_nodes)
