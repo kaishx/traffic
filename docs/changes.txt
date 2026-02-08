@@ -31,3 +31,16 @@ and reviewed AI stuff... shouldnt be any bugs its okay to have bugs early on
 - simplified collision logic so hard that it basically assumes drivers are dumb (only look ahead for 1 car length etc, will explain more if need be)
 
 - i tried adding acceleration but it is an incredibly buggy feature aand so i removed it (it broke basically everything above). need more time to figure out sometime later
+
+07/02/2026 | KT
+- made the physics realistic, cars now follow a new physics system inspired by csgo, where new vel = decay vel + engine - friction
+- a car is now in one of either 3 states: accelerate, cruise, brake
+- added different coloured hitbox mode depending on state car is in
+- cars will now calculate a cruise distance and brake distance when moving. This being the min distances travelled after cruising or braking respectively
+- cars will compare these parameters to a respect distance to the next obstacle.
+- similar to previous logic, if the next obstacle is a yellow light, it will see if it can meet the yellow light within the brake stop distance, else it will try to beat the light.
+- complemeted vehicle types to reflect engine power, braking force, amongst other variables
+
+potential bugs:
+- cars crashing out of a turn, due to not being able to "see" the congestion. 
+- no logic implemented if next segment is fully congested
